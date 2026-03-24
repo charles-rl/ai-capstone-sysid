@@ -4,8 +4,6 @@ from multiprocessing import Pool, cpu_count
 import os
 from tqdm import tqdm
 
-# TODO: include versions of packages in requirements.txt
-
 NUM_CORES = cpu_count() - 1 # Uses all available cores (Server/Colab friendly)
 SAVE_PATH = "../data/raw_actuator_sysid_dataset.npz"
 NUM_EPISODES = 20_000
