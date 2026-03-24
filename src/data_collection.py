@@ -4,9 +4,9 @@ from multiprocessing import Pool, cpu_count
 import os
 from tqdm import tqdm
 
-NUM_CORES = cpu_count() - 1 # Uses all available cores (Server/Colab friendly)
+NUM_CORES = cpu_count() # Uses all available cores (Server/Colab friendly)
 SAVE_PATH = "../data/raw_actuator_sysid_dataset.npz"
-NUM_EPISODES = 20_000
+NUM_EPISODES = 50_000
 # Absolute minimum and maximum
 MINMAX_PARAMS = {
     "damping": [0.5, 5.0],

@@ -1,7 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import scienceplots
 import os
 
+plt.style.use('science')
 DATA_PATH = "../data/raw_actuator_sysid_dataset.npz"
 
 def verify_dataset():
@@ -45,7 +47,7 @@ def verify_dataset():
         
         # Plot Theta (Position)
         plt.subplot(num_samples, 2, 2*i + 1)
-        plt.plot(traj[:, 0], label=f'Theta (qpos)')
+        plt.plot(traj[:, 0], label=r"$\theta$ (Angle)")
         plt.title(f"Sample {idx} | D={params[0]:.2f}, F={params[1]:.2f}, A={params[2]:.2f}")
         plt.ylabel("Radians")
         plt.legend()
@@ -53,12 +55,12 @@ def verify_dataset():
 
         # Plot Omega (Velocity)
         plt.subplot(num_samples, 2, 2*i + 2)
-        plt.plot(traj[:, 1], color='orange', label=f'Omega (qvel)')
+        plt.plot(traj[:, 1], color='orange', label=r"$\omega$ (Angular Velocity)")
         plt.ylabel("Rad/s")
         plt.legend()
         plt.grid(True, alpha=0.3)
 
-    plt.suptitle("Raw Trajectories Verification", fontsize=16)
+    plt.suptitle("Raw Trajectories Visualization (Random Sampling)", fontsize=16)
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
@@ -107,12 +109,12 @@ def find_pure_samples():
         ax1.plot(t[:, 0], color=colors[i], linewidth=2.5, label=legend_label)
         ax2.plot(t[:, 1], color=colors[i], linewidth=2.5)
 
-    ax1.set_title("Theta (Position) Comparison: Impact of Parameter Extremes", fontsize=14)
+    ax1.set_title(r"$\theta$ (Angle) Comparison", fontsize=14)
     ax1.set_ylabel("Radians")
     ax1.legend(loc='upper right', frameon=True, shadow=True)
     ax1.grid(True, alpha=0.3)
 
-    ax2.set_title("Omega (Angular Velocity) Comparison", fontsize=14)
+    ax2.set_title(r"$\omega$ (Angular Velocity) Comparison", fontsize=14)
     ax2.set_ylabel("Rad/s")
     ax2.set_xlabel("Timesteps (50Hz)")
     ax2.grid(True, alpha=0.3)
@@ -121,6 +123,6 @@ def find_pure_samples():
     plt.show()
 
 if __name__ == "__main__":
-    find_pure_samples()  # to find the low, mid, high
-    # verify_dataset()  # to sample from the dataset and see the distribution of parameters as well as their plots
+    # find_pure_samples()  # to find the low, mid, high
+    verify_dataset()  # to sample from the dataset and see the distribution of parameters as well as their plots
     
