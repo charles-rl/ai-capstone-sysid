@@ -9,7 +9,7 @@ from tqdm import tqdm
 from training_models import CNNLSTMModel
 
 # --- HYPERPARAMETERS ---
-EPOCHS = 30
+EPOCHS = 500
 BATCH_SIZE = 256
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DATA_PATH = "../data/processed_actuator_sysid_dataset.npz"
@@ -21,7 +21,7 @@ CONFIG = {
     "cnn1_dims": 128,
     "cnn2_dims": 64,
     "lstm_dims": 64,
-    "weight_decay": 1e-3,
+    "weight_decay": 1e-4,
     "clip_value": 5.0,
     "batch_size": BATCH_SIZE,
     "epochs": EPOCHS
@@ -58,6 +58,9 @@ def train():
     val_loader   = DataLoader(SysIDDataset(data['X_val'],   data['Y_val']),   batch_size=BATCH_SIZE, shuffle=False)
     
     model = CNNLSTMModel(config=CONFIG, n_params=3, chkpt_file_pth=CHKPT_PATH, device=DEVICE)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        model.optimizer, 'min', patience=10, factor=0.5
+    )
     
     best_val_loss = float('inf')
 
@@ -91,6 +94,9 @@ def train():
         
         avg_val_loss = val_loss / len(val_loader.dataset)
         avg_val_mse = val_mse / len(val_loader.dataset)
+        
+        # 1. Update Learning Rate
+        scheduler.step(avg_val_loss)
 
         # 2. Log Metrics to WandB
         wandb.log({
