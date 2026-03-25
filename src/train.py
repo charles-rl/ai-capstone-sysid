@@ -1,35 +1,36 @@
 import os
 import torch
 import numpy as np
-import matplotlib.pyplot as plt
+import wandb
+import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
 from training_models import CNNLSTMModel
 
-# --- CONFIGURATION ---
+# --- HYPERPARAMETERS ---
+EPOCHS = 30
+BATCH_SIZE = 256
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DATA_PATH = "../data/processed_actuator_sysid_dataset.npz"
 CHKPT_PATH = "../models/best_sysid_model.pth"
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-EPOCHS = 30
-BATCH_SIZE = 64
 
 CONFIG = {
-    "in_channels": 4,      # theta, omega, cos(theta), sin(theta)
-    "learning_rate": 1e-3,
-    "cnn1_dims": 32,
-    "cnn2_dims": 32,
+    "in_channels": 4,      
+    "learning_rate": 1e-4,
+    "cnn1_dims": 128,
+    "cnn2_dims": 64,
     "lstm_dims": 64,
-    "weight_decay": 1e-5,
-    "clip_value": 1.0
+    "weight_decay": 1e-3,
+    "clip_value": 5.0,
+    "batch_size": BATCH_SIZE,
+    "epochs": EPOCHS
 }
 
 # --- DATASET CLASS ---
 class SysIDDataset(Dataset):
     def __init__(self, x_data, y_data):
-        # PyTorch Conv1d expects shape (Batch, Channels, Sequence Length)
-        # We must permute from (N, 600, 4) -> (N, 4, 600)
+        # Transpose (N, 600, 4) -> (N, 4, 600) for Conv1d
         self.x = torch.tensor(x_data, dtype=torch.float32).permute(0, 2, 1)
         self.y = torch.tensor(y_data, dtype=torch.float32)
 
@@ -39,105 +40,79 @@ class SysIDDataset(Dataset):
     def __getitem__(self, idx):
         return self.x[idx], self.y[idx]
 
-# --- TRAINING LOOP ---
+# --- TRAINING FUNCTION ---
 def train():
+    # 1. Initialize WandB
+    wandb.init(
+        project="NYCU-AI-Capstone-SysID",
+        config=CONFIG,
+        name="CNN-LSTM-Baseline"
+    )
+    
     os.makedirs(os.path.dirname(CHKPT_PATH), exist_ok=True)
     
-    print(f"Using device: {DEVICE}")
-    print("Loading data...")
+    print(f"Device: {DEVICE}")
     data = np.load(DATA_PATH)
     
-    train_dataset = SysIDDataset(data['X_train'], data['Y_train'])
-    val_dataset   = SysIDDataset(data['X_val'],   data['Y_val'])
-    
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-    val_loader   = DataLoader(val_dataset,   batch_size=BATCH_SIZE, shuffle=False)
+    train_loader = DataLoader(SysIDDataset(data['X_train'], data['Y_train']), batch_size=BATCH_SIZE, shuffle=True)
+    val_loader   = DataLoader(SysIDDataset(data['X_val'],   data['Y_val']),   batch_size=BATCH_SIZE, shuffle=False)
     
     model = CNNLSTMModel(config=CONFIG, n_params=3, chkpt_file_pth=CHKPT_PATH, device=DEVICE)
     
-    train_losses = []
-    val_losses = []
-    val_mses =[]
-    
     best_val_loss = float('inf')
 
-    print("Starting training...")
     for epoch in range(EPOCHS):
-        # -- TRAIN PASS --
+        # -- TRAIN --
         model.train()
-        epoch_train_loss = 0.0
-        
-        for batch_x, batch_y in tqdm(train_loader, desc=f"Epoch {epoch+1}/{EPOCHS} [Train]"):
+        train_loss = 0.0
+        for batch_x, batch_y in tqdm(train_loader, desc=f"Epoch {epoch+1} [Train]"):
             batch_x, batch_y = batch_x.to(DEVICE), batch_y.to(DEVICE)
             loss = model.learn(batch_x, batch_y)
-            epoch_train_loss += loss * batch_x.size(0)
-            
-        epoch_train_loss /= len(train_loader.dataset)
-        train_losses.append(epoch_train_loss)
-
-        # -- VAL PASS --
-        model.eval()
-        epoch_val_loss = 0.0
-        epoch_val_mse = 0.0
+            train_loss += loss * batch_x.size(0)
         
+        avg_train_loss = train_loss / len(train_loader.dataset)
+
+        # -- VALIDATION --
+        model.eval()
+        val_loss = 0.0
+        val_mse = 0.0
         with torch.no_grad():
-            for batch_x, batch_y in tqdm(val_loader, desc=f"Epoch {epoch+1}/{EPOCHS} [Val]"):
+            for batch_x, batch_y in tqdm(val_loader, desc=f"Epoch {epoch+1} [Val]"):
                 batch_x, batch_y = batch_x.to(DEVICE), batch_y.to(DEVICE)
-                
                 mu, sigma = model.forward(batch_x)
                 
-                # Calculate NLL Loss
-                loss = model.loss(mu, batch_y, sigma.pow(2))
-                epoch_val_loss += loss.item() * batch_x.size(0)
+                # NLL Loss
+                v_loss = model.loss(mu, batch_y, sigma.pow(2))
+                val_loss += v_loss.item() * batch_x.size(0)
                 
-                # Calculate MSE (For the rubric / human readability)
-                mse = torch.nn.functional.mse_loss(mu, batch_y)
-                epoch_val_mse += mse.item() * batch_x.size(0)
-                
-        epoch_val_loss /= len(val_loader.dataset)
-        epoch_val_mse /= len(val_loader.dataset)
+                # Accuracy Metric (MSE)
+                mse = F.mse_loss(mu, batch_y)
+                val_mse += mse.item() * batch_x.size(0)
         
-        val_losses.append(epoch_val_loss)
-        val_mses.append(epoch_val_mse)
-        
-        print(f"Epoch {epoch+1:02d} | Train NLL: {epoch_train_loss:.4f} | Val NLL: {epoch_val_loss:.4f} | Val MSE: {epoch_val_mse:.4f}")
-        
-        # -- SAVE BEST MODEL --
-        if epoch_val_loss < best_val_loss:
-            best_val_loss = epoch_val_loss
+        avg_val_loss = val_loss / len(val_loader.dataset)
+        avg_val_mse = val_mse / len(val_loader.dataset)
+
+        # 2. Log Metrics to WandB
+        wandb.log({
+            "epoch": epoch + 1,
+            "train_nll_loss": avg_train_loss,
+            "val_nll_loss": avg_val_loss,
+            "val_mse": avg_val_mse,
+            "learning_rate": CONFIG["learning_rate"]
+        })
+
+        print(f"Epoch {epoch+1:02d} | Train NLL: {avg_train_loss:.4f} | Val NLL: {avg_val_loss:.4f} | Val MSE: {avg_val_mse:.6f}")
+
+        # 3. Checkpointing
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
             model.save_model()
-            print("  --> Saved new best model!")
+            # Log best metrics as summary
+            wandb.run.summary["best_val_nll"] = best_val_loss
+            wandb.run.summary["best_val_mse"] = avg_val_mse
+            print("  --> Saved Best Model")
 
-    # -- PLOT LEARNING CURVES --
-    plot_results(train_losses, val_losses, val_mses)
-
-def plot_results(train_losses, val_losses, val_mses):
-    epochs = range(1, len(train_losses) + 1)
-    
-    plt.figure(figsize=(12, 5))
-    
-    # Plot 1: NLL Loss
-    plt.subplot(1, 2, 1)
-    plt.plot(epochs, train_losses, label='Train NLL Loss')
-    plt.plot(epochs, val_losses, label='Val NLL Loss')
-    plt.title('Gaussian NLL Loss over Epochs')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.grid(True)
-    
-    # Plot 2: MSE
-    plt.subplot(1, 2, 2)
-    plt.plot(epochs, val_mses, color='green', label='Val MSE')
-    plt.title('Validation Mean Squared Error (Rubric Metric)')
-    plt.xlabel('Epoch')
-    plt.ylabel('MSE')
-    plt.legend()
-    plt.grid(True)
-    
-    plt.tight_layout()
-    plt.savefig("../models/training_curves.png")
-    plt.show()
+    wandb.finish()
 
 if __name__ == "__main__":
     train()
