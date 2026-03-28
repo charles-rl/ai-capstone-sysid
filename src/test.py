@@ -6,6 +6,8 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from training_models import CNNLSTMModel
 import scienceplots
+from train_rf import compute_rf_predictions
+from tqdm import tqdm
 
 plt.style.use('science')
 
@@ -13,6 +15,9 @@ plt.style.use('science')
 DATA_PATH = "../data/processed_actuator_sysid_dataset.npz"
 SCALER_PATH = "../models/scalers.pkl"
 CHKPT_PATH = "../models/best_sysid_model.pth"
+RF_RAW_CHKPT_PATH = "../models/random-forest-raw.pkl"
+RF_MANUAL_CHKPT_PATH = "../models/random-forest-manual.pkl"
+RF_PCA_CHKPT_PATH = "../models/random-forest-pca.pkl"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 CONFIG = {
@@ -24,6 +29,10 @@ CONFIG = {
     "weight_decay": 1e-3,
     "clip_value": 5.0
 }
+
+# Add a toggle for which model you want to evaluate
+# Options: "cnn-lstm", "rf-raw", "rf-manual", "rf-pca"
+EVAL_MODEL = "rf-pca"
 
 class SysIDDataset(Dataset):
     def __init__(self, x_data, y_data):
@@ -48,6 +57,31 @@ def evaluate_set(model, loader, name):
             
     return np.vstack(all_mus), np.vstack(all_sigmas), np.vstack(all_targets)
 
+def evaluate_rf_set(model, x_data, y_data, model_type, name, x_train=None, x_scaler=None, pca=None):
+    print(f"Preparing data for {model_type} ({name})...")
+    if model_type == "rf-raw":
+        X_features = x_data.reshape(x_data.shape[0], -1)
+    elif model_type == "rf-manual":
+        from train_rf import extract_rf_features
+        if x_scaler is None:
+            raise ValueError("x_scaler must be provided to inverse transform data for rf-manual")
+        print("Inverse transforming data to physical units for feature extraction...")
+        x_data_phys = x_scaler.inverse_transform(x_data.reshape(-1, 4)).reshape(x_data.shape)
+        X_features = np.array([extract_rf_features(traj, theta_gain=0.7, omega_gain=0.4) for traj in tqdm(x_data_phys)])
+    elif model_type == "rf-pca":
+        if pca is None:
+            raise ValueError("Fitted PCA model must be provided for 'rf-pca' model type.")
+        print("Applying learned PCA transformation...")
+        x_data_flat = x_data.reshape(x_data.shape[0], -1)
+        X_features = pca.transform(x_data_flat)
+    else:
+        raise ValueError(f"Unknown RF type: {model_type}")
+        
+    print(f"Running predictions on {name} data...")
+    mu, var = compute_rf_predictions(model, X_features)
+    sigma = np.sqrt(var) # convert variance back to standard deviation for plotting
+    return mu, sigma, y_data
+
 def main():
     # 1. Load Data and Scalers
     print("Loading data and scalers...")
@@ -55,25 +89,58 @@ def main():
     with open(SCALER_PATH, 'rb') as f:
         scalers = pickle.load(f)
     y_scaler = scalers['y_scaler']
+    x_scaler = scalers['x_scaler']
 
     # 2. Setup DataLoaders
+    # PyTorch DataLoaders
     test_loader = DataLoader(SysIDDataset(data['X_test'], data['Y_test']), batch_size=256)
     ood_loader = DataLoader(SysIDDataset(data['X_ood'], data['Y_ood']), batch_size=256)
 
-    # 3. Load Model
-    model = CNNLSTMModel(config=CONFIG, n_params=3, chkpt_file_pth=CHKPT_PATH, device=DEVICE)
-    model.load_model()
-    print("Model loaded successfully.")
-
-    # 4. Run Evaluation
-    print("Evaluating Test Set (ID)...")
-    mu_id, sigma_id, y_id = evaluate_set(model, test_loader, "ID")
+    # 3. Load Models and Run Evaluation
+    if EVAL_MODEL == "cnn-lstm":
+        print("Loading CNN-LSTM Model...")
+        model = CNNLSTMModel(config=CONFIG, n_params=3, chkpt_file_pth=CHKPT_PATH, device=DEVICE)
+        model.load_model()
+        print("Model loaded successfully.")
+        
+        print("Evaluating Test Set (ID)...")
+        mu_id, sigma_id, y_id = evaluate_set(model, test_loader, "ID")
+        
+        print("Evaluating OOD Set...")
+        mu_ood, sigma_ood, y_ood = evaluate_set(model, ood_loader, "OOD")
     
-    print("Evaluating OOD Set...")
-    mu_ood, sigma_ood, y_ood = evaluate_set(model, ood_loader, "OOD")
+    elif EVAL_MODEL in ["rf-raw", "rf-manual", "rf-pca"]:
+        if EVAL_MODEL == "rf-raw":
+            rf_path = RF_RAW_CHKPT_PATH
+        elif EVAL_MODEL == "rf-manual":
+            rf_path = RF_MANUAL_CHKPT_PATH
+        elif EVAL_MODEL == "rf-pca":
+            rf_path = RF_PCA_CHKPT_PATH
+            
+        print(f"Loading {EVAL_MODEL} model from {rf_path}...")
+        with open(rf_path, 'rb') as f:
+            model = pickle.load(f)
+        print("Model loaded successfully.")
+        
+        # Load PCA model if necessary
+        pca_model = None
+        if EVAL_MODEL == "rf-pca":
+            pca_path = "../models/pca_model.pkl"
+            print(f"Loading PCA transformer from {pca_path}...")
+            with open(pca_path, 'rb') as f:
+                pca_model = pickle.load(f)
+        
+        print(f"Evaluating Test Set (ID) for {EVAL_MODEL}...")
+        mu_id, sigma_id, y_id = evaluate_rf_set(model, data['X_test'], data['Y_test'], EVAL_MODEL, "ID", x_train=data['X_train'], x_scaler=x_scaler, pca=pca_model)
+        
+        print(f"Evaluating OOD Set for {EVAL_MODEL}...")
+        mu_ood, sigma_ood, y_ood = evaluate_rf_set(model, data['X_ood'], data['Y_ood'], EVAL_MODEL, "OOD", x_train=data['X_train'], x_scaler=x_scaler, pca=pca_model)
+        
+    else:
+        raise ValueError(f"Unknown EVAL_MODEL {EVAL_MODEL}")
 
     # 5. Inverse Transform (Back to physical units: Damping, Friction, Armature)
-    # Note: We only inverse transform the Means and Targets, Sigmas stay in scaled space for now
+    # Inverse transform the Means and Targets
     y_id_phys = y_scaler.inverse_transform(y_id)
     mu_id_phys = y_scaler.inverse_transform(mu_id)
     
@@ -102,11 +169,11 @@ def main():
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
 
     # Graph 1: Ground Truth vs Prediction (Parity Plot)
-    # Let's focus on Armature (Index 2)
-    ax1.scatter(y_id_phys[:, 2], mu_id_phys[:, 2], alpha=0.3, label='Test (ID)', color='blue')
-    ax1.scatter(y_ood_phys[:, 2], mu_ood_phys[:, 2], alpha=0.3, label='OOD', color='red')
-    ax1.plot([0, 1.0], [0, 1.0], 'k--', label='Perfect Prediction')
-    ax1.set_xlabel("Ground Truth Armature")
+    # Let's focus on Damping (Index 0)
+    ax1.scatter(y_id_phys[:, 0], mu_id_phys[:, 0], alpha=0.3, label='Test (ID)', color='blue')
+    ax1.scatter(y_ood_phys[:, 0], mu_ood_phys[:, 0], alpha=0.3, label='OOD', color='red')
+    ax1.plot([0.5, 5.0], [0.5, 5.0], 'k--', label='Perfect Prediction')
+    ax1.set_xlabel("Ground Truth Damping")
     ax1.set_ylabel(r"Predicted Mean ($\mu$)")
     ax1.set_title("Regression Accuracy: ID vs OOD")
     ax1.legend()
@@ -121,7 +188,7 @@ def main():
     ax2.legend()
 
     plt.tight_layout()
-    plt.savefig("../figures/test_results_comparison.png")
+    plt.savefig(f"../figures/test_results_comparison_{EVAL_MODEL}.png")
     plt.show()
 
 if __name__ == "__main__":

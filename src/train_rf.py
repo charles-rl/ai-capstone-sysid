@@ -7,6 +7,8 @@ import wandb
 from tqdm import tqdm
 from sklearn.metrics import mean_squared_error
 import pickle
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 
 plt.style.use('science')
 
@@ -139,31 +141,30 @@ def calculate_nll(y_true, mu, var):
     nll = 0.5 * np.log(2 * np.pi * var_safe) + 0.5 * ((y_true - mu)**2 / var_safe)
     return np.mean(nll)
 
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
-
 def apply_pca_to_raw(X_train, X_val, n_components=30):
     """
     X_train/X_val shape: (N, 600, 4)
     Returns: (N, n_components)
     """
-
-    # 1. Standardize (CRITICAL for PCA)
-    with open(SCALER_PATH, 'rb') as f: scalers = pickle.load(f)
-    x_scaler = scalers['x_scaler']
-    X_train_scaled = x_scaler.transform(X_train.reshape(-1, 4))
-    X_val_scaled = x_scaler.transform(X_val.reshape(-1, 4)) # Use train's mean/std
+    # 1. Scale the data
+    # Data was already scaled in preprocessing
     
     # 2. Flatten the data (600x4 -> 2400)
     N_train = X_train.shape[0]
     N_val = X_val.shape[0]
-    X_train_flat = X_train_scaled.reshape(N_train, -1)
-    X_val_flat = X_val_scaled.reshape(N_val, -1)
+    X_train_flat = X_train.reshape(N_train, -1)
+    X_val_flat = X_val.reshape(N_val, -1)
     
     # 3. Apply PCA
     pca = PCA(n_components=n_components, random_state=42)
     X_train_pca = pca.fit_transform(X_train_flat)
     X_val_pca = pca.transform(X_val_flat)
+    
+    # Save the fitted PCA model
+    pca_path = "../models/pca_model.pkl"
+    with open(pca_path, 'wb') as f:
+        pickle.dump(pca, f)
+    print(f"  --> Saved PCA transformer to {pca_path}")
     
     # 4. Check how much info we kept (For your report!)
     explained_var = np.sum(pca.explained_variance_ratio_) * 100
@@ -195,10 +196,18 @@ def main():
     # features = extract_rf_features(X_train[idx], theta_gain=0.7, omega_gain=0.4, plot=True)
     
     if RUN_NAME == "Random-Forest-Manual":
+        print("Inverse transforming data to physical units for feature extraction...")
+        with open(SCALER_PATH, 'rb') as f:
+            scalers = pickle.load(f)
+        x_scaler = scalers['x_scaler']
+        
+        X_train_phys = x_scaler.inverse_transform(X_train.reshape(-1, 4)).reshape(X_train.shape)
+        X_val_phys = x_scaler.inverse_transform(X_val.reshape(-1, 4)).reshape(X_val.shape)
+        
         print("Extracting features for training data...")
-        X_train_rf = np.array([extract_rf_features(traj, theta_gain=0.7, omega_gain=0.4) for traj in tqdm(X_train)])
+        X_train_rf = np.array([extract_rf_features(traj, theta_gain=0.7, omega_gain=0.4) for traj in tqdm(X_train_phys)])
         print("Extracting features for validation data...")
-        X_val_rf   = np.array([extract_rf_features(traj, theta_gain=0.7, omega_gain=0.4) for traj in tqdm(X_val)])
+        X_val_rf   = np.array([extract_rf_features(traj, theta_gain=0.7, omega_gain=0.4) for traj in tqdm(X_val_phys)])
     elif RUN_NAME == "Random-Forest-PCA":
         print("Applying PCA to raw data...")
         X_train_rf, X_val_rf = apply_pca_to_raw(X_train, X_val, n_components=30)
