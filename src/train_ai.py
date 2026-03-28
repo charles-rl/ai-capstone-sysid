@@ -96,7 +96,7 @@ def train():
         avg_val_mse = val_mse / len(val_loader.dataset)
         
         # 1. Update Learning Rate
-        scheduler.step(avg_val_loss)
+        scheduler.step(avg_val_mse)
 
         # 2. Log Metrics to WandB
         wandb.log({

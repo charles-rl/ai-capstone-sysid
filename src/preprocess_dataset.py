@@ -29,12 +29,13 @@ def main():
     theta_noisy = np.round(X_raw[:, :, 0] * (encoder_resolution / (2 * np.pi)))
     # An encoder usually has 3 encoder pulses of noise when operating
     # This is about 3 ticks so (2pi*3)/4096 = 0.0046 radians
-    theta_noisy += np.round(np.random.normal(0, 3, theta_noisy.shape))
+    noise_ticks = 3
+    theta_noisy += np.round(np.random.normal(0, noise_ticks, theta_noisy.shape))
     # Turn it back to radians
     theta_noisy = theta_noisy * ((2 * np.pi) / encoder_resolution)
     
     dt = 0.02
-    sigma_omega = (3 * 2 * np.pi) / (4096.0 * dt)
+    sigma_omega = (noise_ticks * 2 * np.pi) / (4096.0 * dt)
     # Add noise to omega (angular velocity)
     omega_noisy = X_raw[:, :, 1] + np.random.normal(0, sigma_omega, X_raw[:, :, 1].shape)
     
