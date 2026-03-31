@@ -8,6 +8,8 @@ from data_collection import MINMAX_PARAMS
 # --- PATHS ---
 RAW_DATA_PATH = "../data/raw_actuator_sysid_dataset.npz"
 PROCESSED_DATA_PATH = "../data/processed_actuator_sysid_dataset.npz"
+# If you want to skip the noise/quantization step and just use the raw data with engineered features, use this path instead:
+# PROCESSED_DATA_PATH = "../data/processed_clean_actuator_sysid_dataset.npz"
 SCALER_PATH = "../models/scalers.pkl"
 
 def main():
@@ -42,6 +44,9 @@ def main():
     X_noisy = np.zeros(X_raw.shape)
     X_noisy[:, :, 0] = theta_noisy
     X_noisy[:, :, 1] = omega_noisy
+    # For a clean baseline, comment out the noise/quantization and just use the raw data
+    # X_noisy[:, :, 0] = X_raw[:, :, 0]
+    # X_noisy[:, :, 1] = X_raw[:, :, 1]
 
     # ==========================================
     # 2. FEATURE ENGINEERING (Cos/Sin)

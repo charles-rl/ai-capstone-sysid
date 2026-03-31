@@ -4,7 +4,9 @@ import pickle
 import scienceplots
 
 plt.style.use('science')
-PROCESSED_DATA_PATH = "../data/processed_actuator_sysid_dataset.npz"
+# PROCESSED_DATA_PATH = "../data/processed_actuator_sysid_dataset.npz"
+# If you want to skip the noise/quantization step and just use the raw data with engineered features, use this path instead:
+PROCESSED_DATA_PATH = "../data/processed_clean_actuator_sysid_dataset.npz"
 SCALER_PATH = "../models/scalers.pkl"
 
 def verify():
@@ -29,13 +31,13 @@ def verify():
     plt.figure(figsize=(12, 5))
     
     plt.subplot(1, 2, 1)
-    plt.plot(X_train[0, :100, 0], label=r"Noisy $\theta$ (Scaled)")
+    plt.plot(X_train[0, :500, 0], label=r"Noisy $\theta$ (Scaled)")
     plt.title(r"Noisy $\omega$ (Standardized)")
     plt.grid(True, alpha=0.3)
     plt.legend()
 
     plt.subplot(1, 2, 2)
-    plt.plot(X_train[0, :100, 1], color='orange', label=r"Noisy $\omega$ (Scaled)")
+    plt.plot(X_train[0, :500, 1], color='orange', label=r"Noisy $\omega$ (Scaled)")
     plt.title(r"Noisy $\omega$ (Standardized)")
     plt.grid(True, alpha=0.3)
     plt.legend()

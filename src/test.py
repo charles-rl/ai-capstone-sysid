@@ -32,7 +32,7 @@ CONFIG = {
 
 # Add a toggle for which model you want to evaluate
 # Options: "cnn-lstm", "rf-raw", "rf-manual", "rf-pca"
-EVAL_MODEL = "rf-pca"
+EVAL_MODEL = "cnn-lstm"
 
 class SysIDDataset(Dataset):
     def __init__(self, x_data, y_data):
@@ -121,6 +121,29 @@ def main():
         with open(rf_path, 'rb') as f:
             model = pickle.load(f)
         print("Model loaded successfully.")
+        
+        if EVAL_MODEL == "rf-manual":
+            # These names must match the order in extract_rf_features in train_rf.py
+            feature_names = [
+                "theta_mean", "theta_std", "theta_max", "theta_min",
+                "omega_mean", "omega_std", "omega_max", "omega_min",
+                "cos_t_mean", "cos_t_std", "cos_t_max", "cos_t_min",
+                "sin_t_mean", "sin_t_std", "sin_t_max", "sin_t_min",
+                "zero_crossing_rate", 
+                "dominant_freq_idx", "fft_energy",
+                "steady_state", "peak_time", "overshoot", "rise_time", "settling_time"
+            ]
+            
+            importances = model.feature_importances_
+            indices = np.argsort(importances)[::-1]
+
+            print("\n" + "="*45)
+            print(f"{'RANK':4s} | {'FEATURE NAME':20s} | {'IMPORTANCE'}")
+            print("-" * 45)
+            for f in range(len(feature_names)):
+                idx = indices[f]
+                print(f"{f+1:4d} | {feature_names[idx]:20s} | {importances[idx]:.4f}")
+            print("="*45 + "\n")
         
         # Load PCA model if necessary
         pca_model = None

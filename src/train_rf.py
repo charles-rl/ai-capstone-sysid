@@ -191,9 +191,14 @@ def main():
     X_train, X_val = data['X_train'], data['X_val']
     Y_train, Y_val = data['Y_train'], data['Y_val']
     
+    # Subsample 10% for experiment
+    X_train, Y_train = X_train[:len(X_train)//10], Y_train[:len(Y_train)//10]
+    
     # For testing when you want to see the graphs, uncomment this block
     # idx = np.random.randint(0, len(X_train), size=1)[0]
     # features = extract_rf_features(X_train[idx], theta_gain=0.7, omega_gain=0.4, plot=True)
+    # import sys
+    # sys.exit(0)
     
     if RUN_NAME == "Random-Forest-Manual":
         print("Inverse transforming data to physical units for feature extraction...")

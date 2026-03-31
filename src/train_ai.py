@@ -54,7 +54,11 @@ def train():
     print(f"Device: {DEVICE}")
     data = np.load(DATA_PATH)
     
-    train_loader = DataLoader(SysIDDataset(data['X_train'], data['Y_train']), batch_size=BATCH_SIZE, shuffle=True)
+    X_train, Y_train = data['X_train'], data['Y_train']
+    # Subsample 10% for experiment
+    X_train, Y_train = X_train[:len(X_train)//10], Y_train[:len(Y_train)//10]
+
+    train_loader = DataLoader(SysIDDataset(X_train, Y_train), batch_size=BATCH_SIZE, shuffle=True)
     val_loader   = DataLoader(SysIDDataset(data['X_val'],   data['Y_val']),   batch_size=BATCH_SIZE, shuffle=False)
     
     model = CNNLSTMModel(config=CONFIG, n_params=3, chkpt_file_pth=CHKPT_PATH, device=DEVICE)

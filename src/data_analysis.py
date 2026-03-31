@@ -123,6 +123,6 @@ def find_pure_samples():
     plt.show()
 
 if __name__ == "__main__":
-    # find_pure_samples()  # to find the low, mid, high
-    verify_dataset()  # to sample from the dataset and see the distribution of parameters as well as their plots
+    find_pure_samples()  # to find the low, mid, high
+    # verify_dataset()  # to sample from the dataset and see the distribution of parameters as well as their plots
     

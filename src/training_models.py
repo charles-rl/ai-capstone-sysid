@@ -117,7 +117,7 @@ class CNNLSTMModel(BaseModel):
         
         y = self.ln_fc(F.mish(self.fc(y)))
         
-        mu = torch.tanh(self.mu_fc(y))
+        mu = torch.tanh(self.mu_fc(y)) * 1.2  # Scale the tanh to allow for OOD predictions
         sigma = torch.exp(self.sigma_fc(y)) + 1e-6  # epsilon added to help with the stability when the sigma is near 0
         # sigma = standard deviation
         # sigma^2 = variance = var
