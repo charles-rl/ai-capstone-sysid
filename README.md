@@ -9,6 +9,9 @@ The motivation for this project stems from a previous research effort involving 
 ### 🎥 My Previous Work: Inverted Pendulum (Sim-to-Real)
 You can see the hardware implementation and the RL policy that inspired this research [here](https://youtu.be/C4AyItrXxZA?si=I_kgxug3YxGwecLh).
 
+## 📁 Dataset and Training Graphs
+The dataset used in this repository can be found in [here](https://drive.google.com/drive/folders/1dqYA1firHR4vKb_QZjwUgNgfAVJAufj8?usp=sharing). The training graphs are also included in the same Google Drive folder.
+
 ---
 
 ## 🛠️ Project Scope
