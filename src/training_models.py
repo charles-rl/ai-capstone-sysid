@@ -51,10 +51,10 @@ class CNNLSTMModel(BaseModel):
         self.clip_value = config["clip_value"]
         
         self.cnn1_low_freq = nn.Conv1d(
-            in_channels=in_channels, out_channels=cnn1_dims, kernel_size=7, dilation=4, padding="same"
+            in_channels=in_channels, out_channels=cnn1_dims, kernel_size=7, dilation=16, padding="same"
         )
         self.cnn1_mid_freq = nn.Conv1d(
-            in_channels=in_channels, out_channels=cnn1_dims, kernel_size=5, dilation=2, padding="same"
+            in_channels=in_channels, out_channels=cnn1_dims, kernel_size=5, dilation=8, padding="same"
         )
         self.cnn1_high_freq = nn.Conv1d(
             in_channels=in_channels, out_channels=cnn1_dims, kernel_size=3, padding="same"

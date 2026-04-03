@@ -102,35 +102,111 @@ class SinglePendulumEnv(gymnasium.Env):
 
 
 if __name__ == "__main__":
-    # ONLY for testing
-    import time
+    # Script used to save video and the stroboscopic effect image for the report.
+    # You need to install imageio for saving videos: pip install imageio[ffmpeg]
+    # Change the scene to 'white_scene.xml' since it has "main_cam" and white background
+    import imageio
+    import numpy as np
     
-    env = SinglePendulumEnv(render_mode="human")
-    # Test out the min and max parameters
-    parameters = [[0.5, 0.2, 0], [5.0, 2.0, 1.0]]
-    for param in parameters:
-        obs, info = env.reset(seed=0, options={"parameters": param})
-        done = False
-        while not done:
-            start_time = time.time() # Track start of the frame
-            if 10 <= env.timesteps < 20:
-                # Torque pulse positive at 200ms upto 400ms
-                action = np.ones(env.action_space.shape)
-            elif 510 <= env.timesteps < 520:
-                # Torque pulse negative at 10.2s upto 10.4s
-                action = -np.ones(env.action_space.shape)
-            else:
-                # let it settle
-                action = np.zeros(env.action_space.shape)
-            print(obs, info)
-            obs, reward, terminated, truncated, info = env.step(action)
-            done = terminated or truncated
-            env.render()
+    def create_stroboscopic_overlay(frames, start_idx=0, end_idx=500, step=5):
+        """
+        Creates a clean stroboscopic effect using Minimum Intensity Blending.
+        """
+        # 1. Slice the frame range you actually want
+        selected_frames = frames[start_idx:end_idx:step]
+        
+        # 2. Start with the background (first frame)
+        # Convert to float for math, then back to uint8 at the end
+        result = selected_frames[0].astype(np.float32)
+        
+        for i in range(1, len(selected_frames)):
+            frame = selected_frames[i].astype(np.float32)
             
-            # --- SYNC PHYSICS TO REAL TIME ---
-            # Calculate how much time the CPU took to do the work
-            elapsed = time.time() - start_time
-            # Wait for the remainder of the 0.02s timestep
-            if elapsed < env.model.opt.timestep * env.FRAME_SKIP:
-                time.sleep(env.model.opt.timestep * env.FRAME_SKIP - elapsed)
-    env.close()    
+            # --- THE FIX: MINIMUM BLENDING ---
+            # On a white background, this keeps the darkest pixels (the pole) 
+            # from every frame without color distortion.
+            result = np.minimum(result, frame)
+            
+            # OPTIONAL: To make the "older" versions look fainter, 
+            # you can slightly lighten the previous 'result' before the next minimum.
+            result = result * 0.98 + 5 # Uncomment to experiment with fading
+            
+        return result.astype(np.uint8)
+    
+    # 1. Initialize env with rgb_array mode
+    env = SinglePendulumEnv(render_mode="rgb_array")
+    
+    test_params = [2.0, 1.0, 0.4] 
+    obs, info = env.reset(seed=42, options={"parameters": test_params})
+    
+    frames = []
+    done = False
+    print("Recording episode...")
+
+    while not done:
+        # --- CONTROL LOGIC ---
+        if 10 <= env.timesteps < 20:
+            action = np.array([1.0])
+        elif 300 <= env.timesteps < 310:
+            action = np.array([-1.0])
+        else:
+            action = np.array([0.0])
+
+        # --- STEP ---
+        obs, reward, terminated, truncated, info = env.step(action)
+        done = terminated or truncated
+
+        # --- RENDER AND CAPTURE ---
+        # Capture frame (returns a numpy array)
+        frame = env.render()
+        frames.append(frame)
+
+    env.close()
+
+    # 2. Save the video
+    video_path = "../figures/pendulum_trajectory.mp4"
+    print(f"Saving video to {video_path}...")
+    
+    # fps is 50 because your frame_skip=20 at 0.001s means 20ms steps (50Hz)
+    imageio.mimsave(video_path, frames, fps=50)
+    
+    overlay_img = create_stroboscopic_overlay(frames)
+    imageio.imwrite("../figures/stroboscopic_figure.png", overlay_img)
+    print("Done!")
+    
+    # ==========================================
+    
+    # # ONLY for testing
+    # # Used to verify that the environment is working and 
+    # # the actions are having the expected effect on the trajectory.
+    # import time
+    
+    # env = SinglePendulumEnv(render_mode="human")
+    # # Test out the min and max parameters
+    # parameters = [[0.5, 0.2, 0], [5.0, 2.0, 1.0]]
+    # for param in parameters:
+    #     obs, info = env.reset(seed=0, options={"parameters": param})
+    #     done = False
+    #     while not done:
+    #         start_time = time.time() # Track start of the frame
+    #         if 10 <= env.timesteps < 20:
+    #             # Torque pulse positive at 200ms upto 400ms
+    #             action = np.ones(env.action_space.shape)
+    #         elif 510 <= env.timesteps < 520:
+    #             # Torque pulse negative at 10.2s upto 10.4s
+    #             action = -np.ones(env.action_space.shape)
+    #         else:
+    #             # let it settle
+    #             action = np.zeros(env.action_space.shape)
+    #         # print(obs, info)
+    #         obs, reward, terminated, truncated, info = env.step(action)
+    #         done = terminated or truncated
+    #         env.render()
+            
+    #         # --- SYNC PHYSICS TO REAL TIME ---
+    #         # Calculate how much time the CPU took to do the work
+    #         elapsed = time.time() - start_time
+    #         # Wait for the remainder of the 0.02s timestep
+    #         if elapsed < env.model.opt.timestep * env.FRAME_SKIP:
+    #             time.sleep(env.model.opt.timestep * env.FRAME_SKIP - elapsed)
+    # env.close()    
